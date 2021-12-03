@@ -10,23 +10,32 @@
 #define motor 4
 #define ledPin 5
 #define NUM_LEDS 2
+#define serialDebug false
+#define disableMotor false
 
 ESP8266WebServer server(80);
 CRGB leds[NUM_LEDS];
 
-int enabled = 1;
+int enabled = 0;
 int ledMode = 2;
+int ledSubMode = 0;
 int ledTick = 0;
-int lockedMode = 1;
-int unlockedMode = 1;
+int lockedMode = 2;
+int unlockedMode = 2;
 int resetleds = 0;
 int updateleds = 1;
+int latch = 0;
+uint8_t led_r, led_g, led_b;
 
 void setup() {
  
   delay( 3000 ); // power-up safety delay
   //FastLED.addLeds<NEOPIXEL, ledPin>(leds, NUM_LEDS);
   FastLED.addLeds<WS2811, ledPin, GRB>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
+
+#if serialDebug
+  Serial.begin(115200);
+#endif
 
 #if startupflash
   leds[0] = CRGB::Red;
@@ -82,7 +91,9 @@ void loop(){
   int buttonState = digitalRead(pushButton);
   if(buttonState){
     if(enabled){
-      digitalWrite(motor, 1);
+      #if not disableMotor
+        digitalWrite(motor, 1);
+      #endif
       switch(unlockedMode){
         case 0:
           break;
@@ -95,6 +106,59 @@ void loop(){
           }else{
             resetleds = 1;  
           }
+          break;
+        case 2:
+          if(!latch){
+            ledSubMode = 0;
+            latch = 1;  
+          }
+          switch(ledSubMode){
+              case 0:
+                led_r = 0;
+                led_g = 0;
+                led_b = 0;
+                ledSubMode++;
+                //no break
+              case 1:
+                led_g++;
+                if(ledTick>240){
+                  ledSubMode++;
+                  ledTick = 0;
+                }
+                leds[0] = CRGB(led_r, led_g, led_b);
+                leds[1] = CRGB(led_r, led_g, led_b);
+                break;
+              case 2:
+                led_r++;
+                led_b++;
+                if(ledTick>200){
+                  ledSubMode++;
+                  ledTick = 0;
+                }
+                leds[0] = CRGB(led_r, led_g, led_b);
+                leds[1] = CRGB(led_r, led_g, led_b);
+                break;
+              case 3:
+                if(ledTick>50){
+                  leds[0] = CRGB::Black;
+                  leds[1] = CRGB::Black;
+                  ledTick = 0;
+                  ledSubMode++;
+                }
+                break;
+              case 4:
+                if(ledTick>50){
+                  leds[0] = CRGB(led_r, led_g, led_b);
+                  leds[1] = CRGB(led_r, led_g, led_b);
+                  led_g--;
+                  led_b--;
+                  ledTick = 0;
+                  ledSubMode--;
+                }
+                break;
+                
+          }
+          FastLED.show();
           break;
       }
     }else{
@@ -111,6 +175,36 @@ void loop(){
             resetleds = 1;  
           }
           break;
+        case 2:
+          if(!latch){
+            latch = 1;
+            ledSubMode = 0;  
+          }
+          switch(ledSubMode){
+            case 0:
+              if(ledTick>200){
+                leds[0] = CRGB::Red;
+                leds[1] = CRGB::Red;
+                updateleds = 1;
+                ledTick = 0;
+                ledSubMode++;
+              }
+              break;
+            case 1:
+              if(ledTick>200){
+                leds[0] = CRGB::Black;
+                leds[1] = CRGB::Black;
+                updateleds = 1;
+                ledTick = 0;
+                ledSubMode--;
+              }
+              break;
+          }
+          if(updateleds){
+            FastLED.show();
+            updateleds = 0;
+          }
+          break;
 
       }
     }  
@@ -123,7 +217,7 @@ void loop(){
       resetleds = 0;
     }
     updateleds = 1;
-    
+    latch = 0;
     switch(ledMode){
       case 0:
         break;
@@ -150,6 +244,61 @@ void loop(){
           leds[0] = CRGB::Black;
           leds[1] = CRGB::Black;
           FastLED.show();
+        }
+        break;
+       case 3:
+        if(ledTick>240){
+            ledSubMode++;
+            ledTick = 0;
+        }else{
+          switch(ledSubMode){
+            case 7:
+              ledSubMode = 0;
+              //no, no break here either
+            case 0:
+              led_r = 240;
+              led_g = 0;
+              led_b = 0;
+              ledSubMode++;
+              //no, no break!
+            case 1:
+              led_g++;
+              break;
+            case 2:
+              led_r--;
+              break;
+            case 3:
+              led_b++;
+              break;
+            case 4:
+              led_g--;
+              break;
+            case 5:
+              led_r++;
+              break;
+            case 6:
+              led_b--;
+              break;
+           
+          }
+
+          #if serialDebug
+            Serial.print("R: ");
+            Serial.print(led_r);
+            Serial.print(" G: ");
+            Serial.print(led_g);
+            Serial.print(" B: ");
+            Serial.print(led_b);
+            Serial.print(" SUBMODE: ");
+            Serial.print(ledSubMode);
+            Serial.println();
+            delay(1);      
+          #endif
+          
+          leds[0] = CRGB(led_r, led_g, led_b);
+          leds[1] = CRGB(led_r, led_g, led_b);
+          FastLED.show();
+  
         }
         break;
     }
